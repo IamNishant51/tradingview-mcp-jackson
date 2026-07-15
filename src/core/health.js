@@ -164,6 +164,27 @@ export async function launch({ port, kill_existing } = {}) {
   const killFirst = kill_existing !== false;
   const platform = process.platform;
 
+  // First, check if CDP is already available on this port
+  try {
+    const http = await import('http');
+    const existing = await new Promise((resolve) => {
+      http.get(`http://localhost:${cdpPort}/json/version`, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => resolve(data));
+      }).on('error', () => resolve(null));
+    });
+    if (existing) {
+      const info = JSON.parse(existing);
+      return {
+        success: true, reused: true, platform, cdp_port: cdpPort,
+        cdp_url: `http://localhost:${cdpPort}`,
+        browser: info.Browser, user_agent: info['User-Agent'],
+        message: 'Connected to already-running TradingView instance.',
+      };
+    }
+  } catch { /* not running, proceed to launch */ }
+
   const pathMap = {
     darwin: [
       '/Applications/TradingView.app/Contents/MacOS/TradingView',
@@ -175,11 +196,11 @@ export async function launch({ port, kill_existing } = {}) {
       `${process.env['PROGRAMFILES(X86)']}\\TradingView\\TradingView.exe`,
     ],
     linux: [
+      '/snap/bin/tradingview',
       '/opt/TradingView/tradingview',
       '/opt/TradingView/TradingView',
       `${process.env.HOME}/.local/share/TradingView/TradingView`,
       '/usr/bin/tradingview',
-      '/snap/tradingview/current/tradingview',
     ],
   };
 
@@ -214,12 +235,19 @@ export async function launch({ port, kill_existing } = {}) {
   if (killFirst) {
     try {
       if (platform === 'win32') execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });
-      else execSync('pkill -f TradingView', { timeout: 5000 });
+      else {
+        execSync('pkill -f "tradingview.*remote-debugging"', { timeout: 5000 });
+        execSync('pkill -f TradingView', { timeout: 5000 });
+      }
       await new Promise(r => setTimeout(r, 1500));
     } catch { /* may not be running */ }
   }
 
-  const child = spawn(tvPath, [`--remote-debugging-port=${cdpPort}`], { detached: true, stdio: 'ignore' });
+  const isSnap = tvPath && (tvPath.includes('/snap/') || tvPath === '/snap/bin/tradingview');
+  const extraArgs = platform === 'linux' && isSnap
+    ? ['--disable-gpu', '--in-process-gpu', '--use-gl=swiftshader', '--no-sandbox', '--disable-software-rasterizer']
+    : [];
+  const child = spawn(tvPath, [`--remote-debugging-port=${cdpPort}`, ...extraArgs], { detached: true, stdio: 'ignore' });
   child.unref();
 
   for (let i = 0; i < 15; i++) {
