@@ -137,7 +137,7 @@ Sensex       | BSE:SENSEX     | BSE:SENSEX (options)
 ```
 Index        | Lot Size | Approx Premium per Lot
 -------------|----------|------------------------
-Nifty 50     | 25       | ₹3,000–8,000 (varies by strike)
+Nifty 50     | 65       | ₹3,000–8,000 (varies by strike)
 Bank Nifty   | 15       | ₹4,000–10,000
 Sensex       | 10       | ₹5,000–12,000
 ```
@@ -380,35 +380,234 @@ Entry→Target Box:
   overrides='{"backgroundColor":"rgba(255,145,0,0.10)", "linecolor":"#FF9100"}'
 ```
 
-## 8. OPTION CHAIN ANALYSIS (₹10k Capital)
+## 8. OPTIONS QUANT DEVELOPER — Greeks, Strike Selection & Risk Framework
 
-### Strike Selection
+### 8A. NSE Option Chain — Access & Parse
+
 ```
-Expected Move        | Buy Side  | Sell Side
----------------------|-----------|-------------------------
-Gap Up >100pts       | CE 200pts OTM | PE ATM/ITM
-Gap Down >100pts     | PE 200pts OTM | CE ATM/ITM
-Flat / Range         | Sell OTM CE+PE (Short Straddle)
-Trend Up             | CE ATM + 1 strike OTM
-Trend Down           | PE ATM + 1 strike OTM
+URL:  https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY
+      https://www.nseindia.com/api/option-chain-indices?symbol=BANKNIFTY
+
+Fields returned per strike:
+  strikePrice, expiryDate,  underlying, identifier
+  CE: lastPrice, change,  totalTradedVolume, openInterest, changeinOpenInterest,
+      impliedVolatility,  bidPrice/qty, askPrice/qty
+  PE: (same fields as CE)
+
+NSE uses anti-bot protection → use curl_cffi (python) or webfetch with browser-like headers.
+Alternative source with Greeks: https://stockmojo.in/option-chain/nifty
+
+Required headers for NSE API:
+  User-Agent: Mozilla/5.0 ...
+  Accept: application/json, text/plain, */*
+  Referer: https://www.nseindia.com/option-chain
 ```
 
-### Capital Allocation (₹10,000)
+### 8B. Contract Specifications (Nifty 50 Options)
+
 ```
-Strategy             | Premium | Lots | Margin Used
----------------------|---------|------|------------
-Single Option Buy    | ₹3-7k  | 1    | ₹3-7k
-Spread (Credit)      | ₹2-4k  | 1    | ₹4-6k
-Short Straddle       | ₹5-8k  | 1    | ₹8-10k
+Parameter          | Value                          | Notes
+-------------------|--------------------------------|------------------------------
+Lot Size           | 25 (futures), 65 (weekly ops)  | NSE circular FAOP70616 (Jan '26)
+Strike Interval    | 50 pts (Nifty), 100 (B Nifty) | ATM range: ±500pts of spot
+Weekly Expiry      | Thursday                       | Nifty 50 weekly
+Monthly Expiry     | Last Thursday                  | 
+Trading Hours      | 9:15 AM – 3:30 PM              | No pre-open for derivatives
+Tick Size          | 0.05 pts                       | Premium moves in 0.05 increments
+Settlement         | Cash-settled                   | Based on closing price of underlying
+
+Premium Cost = Lot Size × Premium × 1 Lot
+  Example: 65 × ₹125 = ₹8,125 for 1 lot ATM option at ₹125 premium
 ```
 
-### Profit Targets & SL
+### 8C. Option Greeks — Complete Reference
+
 ```
-Trade Type     | TP              | SL
---------------|-----------------|-----------------
-Option Buyer  | 50-100% profit  | 50% premium loss
-Option Seller | 25-50% premium | 2x premium collected
-Scalp (Futures)| 400 ticks (~₹4)| 400 ticks (~₹4)
+GREEK  | SYMBOL | WHAT IT MEASURES          | EXPIRY IMPACT          | RANGE
+-------|--------|---------------------------|------------------------|--------
+Delta  | Δ      | Price change per ₹1 move  | ATM → 0.5, ITM → 1.0  | -1 to +1
+Gamma  | Γ      | Delta change per ₹1 move  | HIGHEST near expiry   | ~0 to 0.1 (ATM expiry day up to 0.5)
+Theta  | Θ      | Time decay per day (₹)    | ACCELERATES last 5d   | ATM: -₹50 to -₹200/day
+Vega   | ν      | Price change per 1% IV    | Peaks ~7-14 DTE       | ₹50-₹500 per IV point
+Rho    | ρ      | Price change per 1% rate  | Negligible for short expiry | ~₹5-₹20
+
+Nifty Options Greeks Quick Calc (ATM, 1 lot = 65 units):
+  Delta: 1 lot × 65 × 0.5 = ₹32.5 per pt move (ATM)
+  Gamma: 1 lot × 65 × 0.03 = ₹1.95 delta change per pt → delta shifts ~0.5/50pts
+  Theta: 1 lot × 65 × (-₹1.5) = -₹97.5/day (ATM, 5 DTE)
+  Vega:  1 lot × 65 × ₹2.5 = ₹162.5 per IV point (ATM, ~7 DTE)
+
+Expiry Day Greeks (DTE=0, weekly expiry):
+  Gamma explodes: ATM gamma can reach 0.3-0.5
+    → ₹1 move = ₹20-32 delta change → position flips from neutral to directional
+  Theta accelerates: ₹150-300/day decay
+    → OTM options decay to zero by 3:15 PM if no move
+    → ATM options lose 60-80% of premium in last 2 hours
+  Vega drops: negligible after 12 PM on expiry
+  → NEVER hold short gamma through expiry lunch (12:00-13:30)
+  → NEVER buy weekly OTM after 2 PM (theta has killed 90% of premium)
+
+DTE = Days To Expiry
+```
+
+### 8D. Strike Selection by Market View
+
+```
+VIEW         | SCENARIO          | BUY SIDE          | SELL SIDE         | LOT SIZE | ₹COST (65 lot)
+-------------|-------------------|-------------------|-------------------|----------|---------------
+Gap Up >100  | Momentum up       | CE ATM+50 OTM     | PE ATM            | 1        | ₹5k-₹8k
+Gap Down >100| Momentum down      | PE ATM+50 OTM     | CE ATM            | 1        | ₹5k-₹8k
+Flat/Range   | <30pt gap, 15-20 VIX | —             | CE+PE OTM ×1      | 1 each   | ₹6k-₹10k (margin)
+Trend Up     | 50+ gap, VWAP >   | CE ATM            | —                 | 1        | ₹6k-₹8k
+Trend Down   | 50+ gap, VWAP <   | PE ATM            | —                 | 1        | ₹6k-₹8k
+Expiry Fade  | Gap 30-60, 75% fill | —               | CE+PE ATM (short straddle)| 1 each | ₹8k-₹12k (margin)
+Volatility   | India VIX >22     | CE+PE ATM (long straddle)| —        | 1 each   | ₹10k-₹14k → max capital
+
+Strike selection formula:
+  ATM Strike = Round(Spot / 50) × 50     (for Nifty, interval=50)
+  1 Strike OTM = ATM ± 50
+  2 Strikes OTM = ATM ± 100
+
+Premium cost check:
+  If premium × lot size × lots > capital × 0.7 → move 1 strike OTM (cheaper)
+  If premium × lot size × lots < capital × 0.3 → move 1 strike ITM (more delta)
+```
+
+### 8E. Capital & Position Sizing (₹10k Base)
+
+```
+CAPITAL   | MAX RISK      | ALLOWED LOTS | LOT SIZE | STRIKE SELECTION RULE
+----------|---------------|--------------|----------|------------------------
+₹5,000    | ₹100          | 1            | 65       | OTM ×2 (premium <₹75)
+₹10,000   | ₹200          | 1            | 65       | ATM or OTM ×1 (premium <₹150)
+₹25,000   | ₹500          | 1            | 65       | ATM or ITM (premium <₹350)
+₹50,000   | ₹1,000        | 2            | 65       | ATM + OTM 1 strike
+₹1,00,000 | ₹2,000        | 3            | 65       | ITM + ATM + OTM spread
+₹10,00,000| ₹20,000       | 10-15        | 65       | Multi-leg strategies
+
+Capital allocation per trade (Kelly-approximate):
+  Max Premium = Capital × 0.7   (never exceed 70% of capital in premium)
+  Max Risk   = Capital × 0.02   (2% rule — ₹200 for ₹10k)
+  SL Trigger = Max Risk / (Lot Size × Lots)   (= ₹200 / 65 = ₹3.07 premium drop for 1 lot)
+
+Lot calculation:
+  Max Lots = Floor(Capital × 0.7 / (Lot Size × ATM Premium))
+```
+
+### 8F. Expiry Day Greeks — Risk Management (DTE=0)
+
+```
+Time          | Gamma Risk             | Theta Decay      | Action
+--------------|------------------------|------------------|------------------------------
+9:15-10:00    | Moderate (gamma ~0.1) | -₹50-100/day     | Enter only with defined SL
+10:00-11:30   | Rising (gamma ~0.15)  | -₹100-150/day    | Avoid naked short gamma
+11:30-13:00   | HIGH (gamma ~0.25)    | -₹150-250/day    | Square off short positions
+13:00-14:00   | Peak (gamma ~0.3-0.5) | -₹200-400/day    | Only scalps, no overnight
+14:00-15:15   | Falling (position closing)| -₹300-500/day  | Close all by 3:20 PM
+15:15-15:30   | Settlement             | Near-zero        | No trading
+
+Gamma Scalping rules:
+  - ATM gamma on expiry day: 0.3-0.5 means ₹1 move = ₹19-32 delta change
+  - A 50-pt move (1 strike) can flip an ATM long from +25 delta to +75 delta
+  - For naked short gamma (seller): ₹50 adverse move = ₹3,250-8,125 loss
+  → MAX LOSS for short gamma = (strike interval × lot size) per strike crossed
+  → Risk per strike: 50 × 65 = ₹3,250 per strike crossed
+
+Theta Advantage strategy:
+  - Sell OTM options with <10% moneyness on expiry day
+  - Collect ₹50-200 premium, keep if price stays OTM
+  - Risk: gamma spike on pin risk (price near strike at 3:15)
+  → DO NOT short options within 1 strike of spot after 2 PM
+```
+
+### 8G. Premium Budgeting & SL Rules
+
+```
+Entry Premium Budget (₹10k capital):
+  Max Premium    = ₹7,000  (70% of capital in 1 lot ATM option)
+  ATM Premium    = ₹100-₹150 (₹6,500-₹9,750 per lot)
+  OTM Premium    = ₹30-₹80 (₹1,950-₹5,200 per lot)
+  Deep OTM       = ₹5-₹20 (₹325-₹1,300 per lot — lottery tickets, avoid)
+
+Option Buyer SL Rules:
+  SL Level (premium) = Entry Premium × 0.5 (50% of premium paid)
+    Entry ₹125 → SL at ₹62.5 → loss = ₹4,062.5 (41% of ₹10k)
+  → For ₹10k capital, max premium entry = ₹125 (so SL = ₹62.5, loss = ₹4,062)
+  → To keep SL at 2% (₹200): entry premium = ₹200 / 0.5 / 65 = ₹6.15 → too low, can't trade
+  → REALISTIC max loss for option buyer at ₹10k: ₹3,000-₹4,000 (30-40%)
+
+Option Buyer TP Rules:
+  TP1 = 100% profit (premium doubles) → book 50% position
+  TP2 = Remaining holds to 3:15 or 200% profit
+  Trailing SL = Lock 25% profit once TP1 hit
+
+Option Seller (Credit) Rules:
+  Max Premium Collected = ₹500 per lot (safe for ₹10k margin)
+  SL = Premium × 2 (loss = 2× collected)
+  Margin for short straddle: ₹8k-₹12k (broker-dependent)
+  
+BREAKEVEN CALCULATION:
+  Call Buyer:  Breakeven = Strike + Premium Paid
+    Buy 24100 CE @ ₹125 → Breakeven = 24,225
+  Put Buyer:   Breakeven = Strike - Premium Paid
+    Buy 24100 PE @ ₹120 → Breakeven = 23,980
+  Short Call:  Breakeven = Strike + Premium Received
+  Short Put:   Breakeven = Strike - Premium Received
+```
+
+### 8H. Strategy Selection by Gap Scenario
+
+```
+GAP SIZE  | CLASSIFICATION | STRATEGY                | SIDE          | TARGET
+----------|---------------|-------------------------|---------------|------------
+<30pts    | Noise         | Short Straddle (OTM ×1) | Neutral       | Theta decay (hold to expiry)
+30-60pts  | Small         | Short Straddle (ATM)    | Mean-revert   | Gap fill + theta
+60-100pts | Moderate      | Buy ATM option          | Momentum      | 50% of gap extension
+100-200pts| Large         | Buy OTM ×1              | Trend cont.   | 70-100% of extension
+>200pts   | Extreme       | Buy OTM ×2 or stand aside| Trend cont.  | Do not fight
+
+Direction rules:
+  Gap Up + Fade view (30-60pts): SELL 24150 CE + SELL 24000 PE
+  Gap Up + Trend view (60+pts):   BUY 24200 CE (1 strike OTM)
+  Gap Down + Fade view:           BUY 24000 PE (1 strike OTM)
+  Gap Down + Trend view:          BUY 23900 PE (2 strikes OTM)
+
+For today (16 Jul 2026, expiry): Gap +70pts (Moderate)
+  Bias: Neutral-Momentum (39% fill, 61% extend)
+  Strategy 1 (defensive): Short Straddle ATM — collect theta on expiry
+  Strategy 2 (directional): Buy 24150 CE if price holds above VWAP (24,132)
+  Strategy 3 (scalp futures): Buy at 24,120 → TP 24,160 (+40pts), SL 24,100 (-20pts)
+```
+
+### 8I. Quick Reference Tables
+
+```
+ATM Strike ≈ Spot Price      | Strike Interval: 50 pts
+Premium Range by Moneyness:
+  ITM (spot -100)  : ₹175-₹300 | Delta: 0.70-0.90
+  ATM              : ₹100-₹175 | Delta: 0.45-0.55
+  OTM ×1 (spot+50): ₹50-₹100  | Delta: 0.25-0.40
+  OTM ×2 (spot+100): ₹20-₹50  | Delta: 0.10-0.25
+  OTM ×3 (spot+150): ₹5-₹20   | Delta: 0.03-0.10
+
+Option Chain Quick Filter:
+  1. Find ATM strike → spot level rounded to 50
+  2. Check OI → highest OI = strongest support/resistance (max pain)
+  3. Check IV → >25 = expensive (sell), <15 = cheap (buy)
+  4. Check PCR (Put/Call Ratio) → >1.2 = bearish, <0.8 = bullish
+  5. Check premium → lot cost = premium × 65; must be < ₹7,000
+
+IV Percentile guide (Nifty 50):
+  IV < 12% → very cheap → buy options
+  IV 12-16% → normal range → neutral
+  IV 16-20% → elevated → sell premium
+  IV > 22% → expensive → sell premium aggressively
+
+Expiry Day Volatility:
+  Morning: IV expands 2-5% (uncertainty)
+  Lunch (12-1): IV contracts (lower activity, theta kills)
+  Afternoon (2-3): IV stable unless big move
+  Last 15 min: Gamma explodes, IV meaningless
 ```
 
 ## 9. BTCUSDT SCALPING (Only if explicitly asked)
