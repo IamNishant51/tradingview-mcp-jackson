@@ -1,6 +1,7 @@
 # AGENT.md — TradingView MCP Trading Agent (Indian Markets)
 
 > Read this file FIRST on every new session before doing anything else.
+> This file is automatically loaded as an instruction by opencode.json.
 
 ## 1. IDENTITY
 
