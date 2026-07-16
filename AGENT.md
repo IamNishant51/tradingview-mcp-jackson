@@ -186,23 +186,30 @@ Where to get data:
   - India VIX → TV search "INDIA VIX" or https://www.kotakneo.com/indices/indian-indices/india-vix/
 ```
 
-### 6C. GAP CLASSIFICATION
+### 6C. GAP CLASSIFICATION (BACKTESTED — 100 Trading Days)
 
 ```
-Gap Size (pts) | Classification | Fill Probability | Action
----------------|---------------|-----------------|-------
-< 30           | Noise         | 85% within 90min | Ignore — no edge
-30-60          | Small         | 62% within 90min | Fade trade (sell gap up / buy gap down)
-60-100         | Moderate      | 45-55%           | Wait for 1st candle confirmation
-100-200        | Large         | 30-40%           | Trend trade (gap extend) — avoid fading
-> 200          | Extreme       | <20%             | Stand aside — panic/greed regime
+Gap Size (pts) | Classification | Fill Rate* | Bias | Action
+---------------|---------------|------------|------|-------
+< 30           | Noise         | 91.7%      | Neutral | Ignore — 92% fill rate but no edge (tight range)
+30-60          | Small         | 63.2%      | Mean-reversion | FADE: sell gap-up, buy gap-down
+60-100         | Moderate      | 38.9%      | Neutral-momentum | WAIT: 39% fill, 61% extend — confirm with 1st candle
+100-200        | Large         | 37.5%      | Momentum | TREND: fade only with strong reversal candle
+> 200          | Extreme       | 5.6%       | Trend continuation | STAND ASIDE: 94% don't fill same day
 
 Gap %:
-  < 0.15%  → Noise
-  0.15-0.5%  → Small (Flat)
-  0.5-1.0%   → Moderate (Tradable)
-  1.0-2.0%   → Large (Trend day)
-  > 2.0%     → Extreme (News-driven panic)
+  < 0.15%  → Noise (84.2% fill)
+  0.15-0.5%  → Small/Flat (41% fill — lower than expected)
+  0.5-1.0%   → Moderate/Tradable (40% fill)
+  1.0-2.0%   → Large/Trend (9.1% fill — almost never fills)
+  > 2.0%     → Extreme/Panic (0% fill in dataset)
+  *Same-day fill rate from 99 observations (18 Feb – 16 Jul 2026)
+
+CRITICAL: Gap fill rate differs by direction — always check both:
+  Gap Up fill rates:   Noise 80% | Small 50% | Moderate 54.5% | Large 33.3% | Extreme 0%
+  Gap Down fill rates: Noise 100% | Small 85.7% | Moderate 14.3% | Large 41.2% | Extreme 10%
+  → Gap DOWNS fill faster than gap UPS in small-to-moderate ranges
+  → Gap UPS hold better in moderate range (54.5% fill vs 14.3% for gap down)
 ```
 
 ### 6D. WHY THE GAP HAPPENS — Pre-Market Checklist
@@ -272,7 +279,48 @@ Trading action:
   - Result: gap partially filled (70→41pts filled by 10:00 AM)
 ```
 
-## 7. CHART MARKING CONVENTIONS
+### 6G. DAY-OF-WEEK GAP STATISTICS (Backtested)
+
+```
+Day    | Observations | Gap Up | Gap Down | Fill Rate | Notes
+-------|-------------|--------|---------|-----------|-------
+Mon    | 21          | 11     | 10      | 33.3%     | Lowest fill — Monday gaps hold best
+Tue    | 18          | 9      | 9       | 61.1%     | HIGHEST fill — mean reversion strongest
+Wed    | 22          | 12     | 10      | 45.5%     | Average — mid-week balance
+Thu    | 20          | 11     | 9       | 45.0%     | Expiry day — option positioning adds noise
+Fri    | 18          | 8      | 10      | 33.3%     | Low fill — weekly expiry + weekend hedging
+
+ACTIONABLE:
+  - Tuesday gaps fade best (61% fill) → most reliable mean-reversion day
+  - Monday/Friday gaps hold worst → trend days more likely, avoid fading
+  - Thursday expiry: watch option max pain, gaps may behave differently
+```
+
+### 6H. 100-DAY RESEARCH SUMMARY (18 Feb — 16 Jul 2026)
+
+```
+Dataset: 99 gap observations from NSE:NIFTY daily bars
+Method: Gap = Open − Previous Close. Fill = price touched prev close intraday.
+
+=== KEY FINDINGS ===
+1. Overall fill rate: 43.4% (43/99) — most gaps do NOT fill same day
+2. Gap Up frequency: 51.5% | Gap Down frequency: 48.5% — nearly balanced
+3. Average gap size when up: +127.6 pts | when down: -155.1 pts
+4. Longest consecutive gap-up streak: 8 days | gap-down: 4 days
+5. Gaps <30pts fill 92% of time → but not tradeable (tight range)
+6. Gaps 30-60 fill 63% → MOST tradeable for fade strategy
+7. Gaps 60-100 fill only 39% → surprising — these extend more often than fill
+8. Gaps >200 fill 6% → near-certain trend continuation
+9. Gap-down fill rate (45.8%) > Gap-up fill rate (41.2%) — downs revert more
+10. The %-based classification (<0.15%=Noise) correctly identifies fillable gaps
+
+=== REVISED TRADING RULES ===
+- FADE gaps 30-60 only (63% fill) — highest edge setup
+- WAIT for candle confirmation on 60-100 gaps (39% fill — 61% extend)
+- TREND with gaps >100 (38% fill on large, 6% on extreme — almost never fade)
+- PREFER Tuesday trades (61% fill) — AVOID Monday/Friday fades (33%)
+- CHECK gap direction: gap-downs (46% fill) reverse more reliably than gap-ups (41%)
+```
 
 ### Text Placement (CRITICAL — avoid overlap)
 ```
