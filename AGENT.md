@@ -1,7 +1,8 @@
 # AGENT.md — TradingView MCP Trading Agent (Indian Markets)
 
 > Read this file FIRST on every new session before doing anything else.
-> This file is automatically loaded as an instruction by opencode.json.
+> This file is automatically loaded by: opencode.json (instructions), CLAUDE.md (symlink).
+> Agents: opencode reads via `instructions`, Claude Code/Cursor/Windsurf auto-read CLAUDE.md.
 
 ## 1. IDENTITY
 
