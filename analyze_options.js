@@ -1,69 +1,63 @@
-const LOT_SIZE = 65
-const STRIKE_INTERVAL = 50
-const CAPITAL = 10000
 const MAX_PREMIUM_RATIO = 0.7
 
-function atmStrike(spot) {
-  return Math.round(spot / STRIKE_INTERVAL) * STRIKE_INTERVAL
+const INDICES = {
+  nifty:  { name: 'Nifty 50', lot: 65, interval: 50, capital: 10000 },
+  banknifty: { name: 'Bank Nifty', lot: 15, interval: 100, capital: 10000 },
+  sensex: { name: 'Sensex', lot: 10, interval: 100, capital: 10000 },
 }
 
-function premiumCost(premium) {
-  return LOT_SIZE * premium
+function atmStrike(spot, interval) {
+  return Math.round(spot / interval) * interval
 }
 
-function selectStrikes(spot, gap, vwap) {
-  const atm = atmStrike(spot)
+function premiumCost(premium, lot) {
+  return lot * premium
+}
+
+function selectStrikes(spot, gap, vwap, interval) {
+  const atm = atmStrike(spot, interval)
   const gapSize = Math.abs(gap)
   const gapUp = gap > 0
   const wickAboveVwap = spot > vwap
 
-  let buyStrike = null, sellStrike = null, direction = null, strategy = null, bias = null
+  let buyStrike = null, direction = null, strategy = null, bias = null
 
   if (gapSize < 30) {
     strategy = 'Short Straddle OTM'
-    buyStrike = null
-    sellStrike = null
     direction = 'Neutral'
     bias = 'Theta decay'
   } else if (gapSize <= 60) {
     strategy = 'Short Straddle ATM'
-    buyStrike = null
-    sellStrike = null
     direction = 'Mean-reversion'
     bias = 'Gap fill'
   } else if (gapSize <= 100) {
     if (gapUp && wickAboveVwap) {
-      buyStrike = atm + STRIKE_INTERVAL
+      buyStrike = atm + interval
       direction = 'Long CE'
-      bias = 'Momentum (extend)'
       strategy = 'Buy OTM Call'
+      bias = 'Momentum (extend)'
     } else {
-      buyStrike = gapUp ? atm + STRIKE_INTERVAL : atm - STRIKE_INTERVAL
+      buyStrike = gapUp ? atm + interval : atm - interval
       direction = gapUp ? 'Long CE' : 'Long PE'
-      bias = 'Neutral-momentum'
       strategy = 'Buy ATM+1'
+      bias = 'Neutral-momentum'
     }
   } else if (gapSize <= 200) {
-    if (gapUp) {
-      buyStrike = atm + STRIKE_INTERVAL * 2
-      direction = 'Long CE'
-    } else {
-      buyStrike = atm - STRIKE_INTERVAL * 2
-      direction = 'Long PE'
-    }
-    bias = 'Trend continuation'
+    buyStrike = gapUp ? atm + interval * 2 : atm - interval * 2
+    direction = gapUp ? 'Long CE' : 'Long PE'
     strategy = 'Buy OTM x2'
+    bias = 'Trend continuation'
   } else {
     direction = gapUp ? 'Long CE OTM x3' : 'Long PE OTM x3'
-    bias = 'Trend — stand aside'
     strategy = 'Avoid / deep OTM only'
+    bias = 'Trend — stand aside'
   }
 
-  return { atm, buyStrike, sellStrike, direction, strategy, bias, gapSize, gapUp }
+  return { atm, buyStrike, direction, strategy, bias, gapSize, gapUp }
 }
 
-function premiumEstimate(strike, atm, isCall) {
-  const dist = Math.round(Math.abs(strike - atm) / STRIKE_INTERVAL)
+function premiumEstimate(strike, atm, isCall, interval) {
+  const dist = Math.round(Math.abs(strike - atm) / interval)
   if (dist === 0) return { premium: 125, delta: 0.50, label: 'ATM' }
   if (dist === 1) return isCall
     ? { premium: 75, delta: 0.32, label: 'OTM x1' }
@@ -73,13 +67,20 @@ function premiumEstimate(strike, atm, isCall) {
   return { premium: 160, delta: 0.70, label: 'ITM' }
 }
 
-function calculatePlan(spot, gap, vwap) {
-  const sel = selectStrikes(spot, gap, vwap)
+function calculatePlan(spot, gap, vwap, indexKey) {
+  const cfg = INDICES[indexKey]
+  if (!cfg) throw new Error(`Unknown index: ${indexKey}`)
+
+  const sel = selectStrikes(spot, gap, vwap, cfg.interval)
   const plan = {
+    index: cfg.name,
     spot,
     gap,
     vwap,
     atm: sel.atm,
+    interval: cfg.interval,
+    lotSize: cfg.lot,
+    capital: cfg.capital,
     direction: sel.direction,
     strategy: sel.strategy,
     bias: sel.bias,
@@ -89,43 +90,39 @@ function calculatePlan(spot, gap, vwap) {
 
   if (sel.buyStrike) {
     const isCall = sel.direction.includes('CE')
-    const est = premiumEstimate(sel.buyStrike, sel.atm, isCall)
-    const cost = premiumCost(est.premium)
-    const affordable = cost <= CAPITAL * MAX_PREMIUM_RATIO
+    let est = premiumEstimate(sel.buyStrike, sel.atm, isCall, cfg.interval)
+    let cost = premiumCost(est.premium, cfg.lot)
     let adjustedStrike = sel.buyStrike
-    let adjustedEst = est
 
-    while (cost > CAPITAL * MAX_PREMIUM_RATIO) {
-      adjustedStrike += isCall ? STRIKE_INTERVAL : -STRIKE_INTERVAL
-      adjustedEst = premiumEstimate(adjustedStrike, sel.atm, isCall)
-      const newCost = premiumCost(adjustedEst.premium)
-      if (newCost <= CAPITAL * MAX_PREMIUM_RATIO || Math.abs(adjustedStrike - spot) > 250) break
+    while (cost > cfg.capital * MAX_PREMIUM_RATIO) {
+      adjustedStrike += isCall ? cfg.interval : -cfg.interval
+      est = premiumEstimate(adjustedStrike, sel.atm, isCall, cfg.interval)
+      cost = premiumCost(est.premium, cfg.lot)
+      if (cost <= cfg.capital * MAX_PREMIUM_RATIO || Math.abs(adjustedStrike - spot) > cfg.interval * 5) break
     }
 
-    const finalCost = premiumCost(adjustedEst.premium)
+    const finalCost = premiumCost(est.premium, cfg.lot)
     plan.entries.push({
       type: sel.direction,
       strike: adjustedStrike,
-      premium: adjustedEst.premium,
+      premium: est.premium,
       lotCost: finalCost,
-      delta: adjustedEst.delta,
-      label: adjustedEst.label,
-      capitalUsed: (finalCost / CAPITAL * 100).toFixed(1) + '%',
-      affordable: finalCost <= CAPITAL * MAX_PREMIUM_RATIO,
+      delta: est.delta,
+      label: est.label,
+      capitalUsed: (finalCost / cfg.capital * 100).toFixed(1) + '%',
+      affordable: finalCost <= cfg.capital * MAX_PREMIUM_RATIO,
     })
 
-    const breakeven = isCall
-      ? adjustedStrike + adjustedEst.premium
-      : adjustedStrike - adjustedEst.premium
-
-    plan.breakeven = breakeven
+    plan.breakeven = isCall
+      ? adjustedStrike + est.premium
+      : adjustedStrike - est.premium
     plan.maxLoss = Math.round(finalCost * 0.5)
-    plan.slPremium = Math.round(adjustedEst.premium * 0.5)
-    plan.tp1Target = Math.round(adjustedEst.premium * 2)
-    plan.recommendation = affordable
-      ? (finalCost <= CAPITAL * 0.3
+    plan.slPremium = Math.round(est.premium * 0.5)
+    plan.tp1Target = Math.round(est.premium * 2)
+    plan.recommendation = finalCost <= cfg.capital * MAX_PREMIUM_RATIO
+      ? (finalCost <= cfg.capital * 0.3
           ? `Move 1 strike ITM (cost only ${finalCost})`
-          : `Affordable — ${finalCost}`)
+          : `Affordable`)
       : `Too expensive (${finalCost}) — move ${isCall ? 'up' : 'down'} 1 strike`
   } else {
     plan.entries.push({
@@ -139,23 +136,24 @@ function calculatePlan(spot, gap, vwap) {
 }
 
 function printPlan(plan) {
-  console.log('='.repeat(60))
-  console.log('  OPTIONS ANALYSIS REPORT')
-  console.log('='.repeat(60))
+  console.log('='.repeat(62))
+  console.log(`  ${plan.index} — OPTIONS ANALYSIS`)
+  console.log('='.repeat(62))
   console.log(`  Spot:        ${plan.spot}`)
   console.log(`  Gap:         ${plan.gap > 0 ? '+' : ''}${plan.gap} pts`)
   console.log(`  VWAP:        ${plan.vwap}`)
-  console.log(`  ATM Strike:  ${plan.atm}`)
+  console.log(`  ATM Strike:  ${plan.atm} (interval ${plan.interval})`)
   console.log(`  Direction:   ${plan.direction}`)
   console.log(`  Strategy:    ${plan.strategy}`)
   console.log(`  Bias:        ${plan.bias}`)
-  console.log(`  Lots:        ${plan.lots} (lot size: ${LOT_SIZE})`)
-  console.log('-'.repeat(60))
+  console.log(`  Position:    ${plan.lots} lot × ${plan.lotSize} = ${plan.lots * plan.lotSize} units`)
+  console.log(`  Capital:     ₹${plan.capital}`)
+  console.log('-'.repeat(62))
 
   plan.entries.forEach((e, i) => {
     console.log(`  Entry ${i + 1}: ${e.type} @ ${e.strike}`)
-    if (e.premium) {
-      console.log(`    Premium:    ₹${e.premium} (${e.label || ''})`)
+    if (e.premium != null) {
+      console.log(`    Premium:    ₹${e.premium} (${e.label})`)
       console.log(`    Lot Cost:   ₹${e.lotCost}`)
       console.log(`    Delta:      ${e.delta}`)
       console.log(`    Capital:    ${e.capitalUsed}`)
@@ -164,20 +162,25 @@ function printPlan(plan) {
     if (e.note) console.log(`    Note:       ${e.note}`)
   })
 
-  if (plan.breakeven) {
+  if (plan.breakeven != null) {
     console.log(`  Breakeven:   ${plan.breakeven}`)
-    console.log(`  TP (2x):     ${plan.tp1Target}`)
-    console.log(`  SL (50%):    ₹${plan.slPremium} premium (loss: ₹${plan.maxLoss})`)
+    console.log(`  TP (2x):     ₹${plan.tp1Target}`)
+    console.log(`  SL (50%):    ₹${plan.slPremium} premium drop (loss: ₹${plan.maxLoss})`)
   }
 
-  console.log('='.repeat(60))
+  console.log('='.repeat(62))
   if (plan.entries[0]?.recommendation) {
-    console.log(`  NOTE: ${plan.entries[0].recommendation}`)
+    console.log(`  ${plan.entries[0].recommendation}`)
   }
 }
 
-const SPOT = 24121
-const VWAP = 24132
-const GAP = 70.65
+const SCENARIOS = [
+  { key: 'nifty',     spot: 24121, gap: 70.65, vwap: 24132 },
+  { key: 'banknifty', spot: 52100, gap: 250,   vwap: 52050 },
+  { key: 'sensex',    spot: 81500, gap: 180,   vwap: 81400 },
+]
 
-printPlan(calculatePlan(SPOT, GAP, VWAP))
+SCENARIOS.forEach(s => {
+  printPlan(calculatePlan(s.spot, s.gap, s.vwap, s.key))
+  console.log()
+})

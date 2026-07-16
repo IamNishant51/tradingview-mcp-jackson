@@ -17,6 +17,7 @@ You are a TradingView MCP agent for **Indian equity index options** — Nifty 50
 ## 2. SESSION STARTUP (Run these in order)
 
 ```
+0. NEWS SEARCH → websearch for "Indian stock market news today [date] Nifty Bank Nifty Sensex"
 1. tv_health_check → verify connection
 2. chart_get_state → get symbol, timeframe, indicator entity IDs
 3. quote_get → current price
@@ -152,6 +153,8 @@ Sensex       | Friday        | Last Friday
 ```
 
 ## 6. GAP UP/GAP DOWN ANALYSIS — GIFT NIFTY METHOD
+
+> Applies to Nifty 50 (via GIFT Nifty). For Bank Nifty and Sensex, apply same gap classification rules (Section 6C-6H) using their respective opening prints vs previous close. Methodology, signals, and fill-rate statistics are identical across all three indices.
 
 ### 6A. GIFT NIFTY TIMELINE (Best Windows)
 ```
@@ -403,21 +406,23 @@ Required headers for NSE API:
   Referer: https://www.nseindia.com/option-chain
 ```
 
-### 8B. Contract Specifications (Nifty 50 Options)
+### 8B. Contract Specifications (All Indices)
 
 ```
-Parameter          | Value                          | Notes
--------------------|--------------------------------|------------------------------
-Lot Size           | 25 (futures), 65 (weekly ops)  | NSE circular FAOP70616 (Jan '26)
-Strike Interval    | 50 pts (Nifty), 100 (B Nifty) | ATM range: ±500pts of spot
-Weekly Expiry      | Thursday                       | Nifty 50 weekly
-Monthly Expiry     | Last Thursday                  | 
-Trading Hours      | 9:15 AM – 3:30 PM              | No pre-open for derivatives
-Tick Size          | 0.05 pts                       | Premium moves in 0.05 increments
-Settlement         | Cash-settled                   | Based on closing price of underlying
+Parameter          | Nifty 50            | Bank Nifty         | Sensex
+-------------------|---------------------|--------------------|--------------------
+Lot Size (options) | 65 (weekly ops)     | 15                 | 10
+Strike Interval    | 50 pts              | 100 pts            | 100 pts
+Weekly Expiry      | Thursday            | Wednesday          | Friday
+Monthly Expiry     | Last Thursday       | Last Wednesday     | Last Friday
+Trading Hours      | 9:15 AM – 3:30 PM  | 9:15 AM – 3:30 PM  | 9:15 AM – 3:30 PM
+Tick Size          | 0.05 pts            | 0.05 pts           | 0.05 pts
+Settlement         | Cash-settled        | Cash-settled       | Cash-settled
 
 Premium Cost = Lot Size × Premium × 1 Lot
-  Example: 65 × ₹125 = ₹8,125 for 1 lot ATM option at ₹125 premium
+  Nifty 50:     65 × ₹125 = ₹8,125 (1 lot ATM)
+  Bank Nifty:   15 × ₹350 = ₹5,250 (1 lot ATM)
+  Sensex:       10 × ₹500 = ₹5,000 (1 lot ATM)
 ```
 
 ### 8C. Option Greeks — Complete Reference
@@ -436,6 +441,16 @@ Nifty Options Greeks Quick Calc (ATM, 1 lot = 65 units):
   Gamma: 1 lot × 65 × 0.03 = ₹1.95 delta change per pt → delta shifts ~0.5/50pts
   Theta: 1 lot × 65 × (-₹1.5) = -₹97.5/day (ATM, 5 DTE)
   Vega:  1 lot × 65 × ₹2.5 = ₹162.5 per IV point (ATM, ~7 DTE)
+
+Bank Nifty Greeks Quick Calc (ATM, 1 lot = 15 units):
+  Delta: 1 lot × 15 × 0.5 = ₹7.5 per pt move (ATM)
+  Theta: 1 lot × 15 × (-₹1.5) = -₹22.5/day (ATM, 5 DTE)
+  Vega:  1 lot × 15 × ₹2.5 = ₹37.5 per IV point (ATM, ~7 DTE)
+
+Sensex Greeks Quick Calc (ATM, 1 lot = 10 units):
+  Delta: 1 lot × 10 × 0.5 = ₹5.0 per pt move (ATM)
+  Theta: 1 lot × 10 × (-₹1.5) = -₹15.0/day (ATM, 5 DTE)
+  Vega:  1 lot × 10 × ₹2.5 = ₹25.0 per IV point (ATM, ~7 DTE)
 
 Expiry Day Greeks (DTE=0, weekly expiry):
   Gamma explodes: ATM gamma can reach 0.3-0.5
@@ -464,9 +479,12 @@ Expiry Fade  | Gap 30-60, 75% fill | —               | CE+PE ATM (short stradd
 Volatility   | India VIX >22     | CE+PE ATM (long straddle)| —        | 1 each   | ₹10k-₹14k → max capital
 
 Strike selection formula:
-  ATM Strike = Round(Spot / 50) × 50     (for Nifty, interval=50)
-  1 Strike OTM = ATM ± 50
-  2 Strikes OTM = ATM ± 100
+  ATM Strike = Round(Spot / interval) × interval
+    Nifty:    Round(Spot / 50) × 50
+    Bank Nifty: Round(Spot / 100) × 100
+    Sensex:    Round(Spot / 100) × 100
+  1 Strike OTM = ATM ± interval
+  2 Strikes OTM = ATM ± interval × 2
 
 Premium cost check:
   If premium × lot size × lots > capital × 0.7 → move 1 strike OTM (cheaper)
@@ -591,13 +609,13 @@ Premium Range by Moneyness:
   OTM ×3 (spot+150): ₹5-₹20   | Delta: 0.03-0.10
 
 Option Chain Quick Filter:
-  1. Find ATM strike → spot level rounded to 50
+  1. Find ATM strike → spot level rounded to interval
   2. Check OI → highest OI = strongest support/resistance (max pain)
   3. Check IV → >25 = expensive (sell), <15 = cheap (buy)
   4. Check PCR (Put/Call Ratio) → >1.2 = bearish, <0.8 = bullish
-  5. Check premium → lot cost = premium × 65; must be < ₹7,000
+  5. Check premium → lot cost = premium × lot size; must be < 70% of capital
 
-IV Percentile guide (Nifty 50):
+IV Percentile guide:
   IV < 12% → very cheap → buy options
   IV 12-16% → normal range → neutral
   IV 16-20% → elevated → sell premium
@@ -681,6 +699,7 @@ Run this every morning after session startup. Fill in the blanks.
 📊 DAILY PLAN | <DATE> | <DAY OF WEEK>
 
 === PRE-MARKET CHECKLIST (6:00-9:00 AM) ===
+☐ NEWS SEARCH: websearch 7 queries (Section 14) → identify market-moving events
 ☐ Gift Nifty @ <time> = <price> vs Prev Close <price> = ±<pts> gap
 ☐ US Markets: S&P 500 <±%>, Nasdaq <±%>, US VIX <value>
 ☐ Asia Open: Nikkei <±%>, Hang Seng <±%>, Kospi <±%>
@@ -735,4 +754,29 @@ Place order button                 | 1715    | 915     | ui_mouse_click
 Ctrl+A (select all)                | —       | —       | ui_keyboard ctrl+a
 Type text                          | —       | —       | ui_type_text "65248"
 Confirm/Enter                      | —       | —       | ui_keyboard Enter
+```
+
+## 14. PRE-TRADE NEWS RESEARCH
+
+**Always search for news before every trade session.** Run this sequence:
+
+```
+1. websearch "Indian stock market news today <date> Nifty Bank Nifty Sensex"
+2. websearch "Nifty 50 technical analysis <date> support resistance"
+3. websearch "Bank Nifty <date> outlook options"
+4. websearch "FII DII net buy sell <date>"
+5. websearch "<index heavyweight> news earnings <date>" (if earnings season)
+6. websearch "crude oil gold USD INR latest <date>" (macro cues)
+7. websearch "India VIX <date>" (volatility check)
+```
+
+Check for these before trading:
+```
+☐ Global cues (US markets, VIX, Dollar Index)
+☐ Domestic macro (FII/DII flows, USD/INR, crude oil)
+☐ Index-specific news (earnings, corporate actions, sector rotation)
+☐ Geopolitical events (elections, tariffs, conflicts)
+☐ Economic data (CPI, IIP, GDP, RBI policy)
+☐ Volatility check (India VIX normal 12-16; above 20 = risk-off)
+☐ Option chain (max pain, OI build-up, PCR)
 ```
