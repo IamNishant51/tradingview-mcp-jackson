@@ -151,44 +151,125 @@ Bank Nifty   | Wednesday     | Last Wednesday
 Sensex       | Friday        | Last Friday
 ```
 
-## 6. GAP UP/GAP DOWN ANALYSIS
+## 6. GAP UP/GAP DOWN ANALYSIS — GIFT NIFTY METHOD
 
-### Data needed
+### 6A. GIFT NIFTY TIMELINE (Best Windows)
 ```
-- Previous day's close, high, low
-- Overnight global cues (SGX Nifty futures)
-- Current futures price vs previous close
-- Support/resistance levels from chart
-```
-
-### Gap Prediction
-```
-GAP UP (>0.5%):
-- SGX Nifty trading >0.3% above prev close = gap up likely
-- Add GAP FILL ZONE label on chart at previous close
-- Mark RESISTANCE at prev day high + 0.5% extension
-- Bias: SELL at resistance (gap fills 80% of the time)
-
-GAP DOWN (< -0.5%):
-- SGX Nifty trading >0.3% below prev close = gap down likely
-- Add GAP FILL ZONE label at previous close
-- Mark SUPPORT at prev day low - 0.5% extension
-- Bias: BUY at support (gap fills 80% of the time)
-
-FLAT (between -0.5% and +0.5%):
-- No gap expected
-- Trade within established range
-- Bias: range-bound, sell at resistance, buy at support
+Window (IST) | What happens        | Reliability
+-------------|---------------------|------------
+6:00 AM      | Session 1 opens    | Low — too early, thin volume
+7:00 AM      | Check level + US close | Medium — after US settle
+8:00 AM      | Asian markets open (Nikkei, Hang Seng, ASX) | Medium-High
+8:30 AM      | BEST WINDOW — USD/INR + Asian cues priced in | HIGH (~85% accuracy)
+8:45-9:00 AM | Final check before pre-open | HIGHEST — most current
+9:00-9:15 AM | NSE Pre-open session | Actual orders start matching
+9:15 AM      | NSE opens           | Confirmed gap
 ```
 
-### Key Levels to Mark
+### 6B. GAP CALCULATION FORMULA
+
 ```
-- Previous Close (Pivot)
-- Day High / Day Low
-- VWAP (anchor at session start)
-- 200 EMA (daily) — major support/resistance
-- Supply zones (red) — where selling expected
-- Demand zones (green) — where buying expected
+Gap (points) = Nifty Opening Price − Previous Nifty Close
+
+Expected from GIFT Nifty:
+  Expected Gap = GIFT Nifty Price − Previous Nifty Close
+  (Approx. — GIFT Nifty is USD-denominated futures, Nifty close is INR cash)
+
+For USD/INR adjustment (when precision needed):
+  Adjusted GIFT Level = GIFT Nifty × (Current USD/INR ÷ Prev Close USD/INR)
+  Adjusted Gap = Adjusted GIFT Level − Previous Nifty Close
+
+Where to get data:
+  - Previous Nifty Close → NSE website or TV chart at 3:30 PM
+  - GIFT Nifty @ 8:30 AM → https://www.angelone.in/indices/gift-nifty or TV widget
+  - USD/INR → https://www.xe.com or RBI reference rate
+  - India VIX → TV search "INDIA VIX" or https://www.kotakneo.com/indices/indian-indices/india-vix/
+```
+
+### 6C. GAP CLASSIFICATION
+
+```
+Gap Size (pts) | Classification | Fill Probability | Action
+---------------|---------------|-----------------|-------
+< 30           | Noise         | 85% within 90min | Ignore — no edge
+30-60          | Small         | 62% within 90min | Fade trade (sell gap up / buy gap down)
+60-100         | Moderate      | 45-55%           | Wait for 1st candle confirmation
+100-200        | Large         | 30-40%           | Trend trade (gap extend) — avoid fading
+> 200          | Extreme       | <20%             | Stand aside — panic/greed regime
+
+Gap %:
+  < 0.15%  → Noise
+  0.15-0.5%  → Small (Flat)
+  0.5-1.0%   → Moderate (Tradable)
+  1.0-2.0%   → Large (Trend day)
+  > 2.0%     → Extreme (News-driven panic)
+```
+
+### 6D. WHY THE GAP HAPPENS — Pre-Market Checklist
+
+Check these in order to explain the gap:
+
+```
+1. US Market (previous night) — S&P 500, Nasdaq change %
+2. US VIX — fear gauge (above 20 = risk-off)
+3. US Dollar Index (DXY) — rupee impact
+4. Crude Oil — Iran/Middle East impact on India (import-dependent)
+5. Asia Open — Nikkei 225, Hang Seng, Kospi direction
+6. FII/DII Net Buy/Sell — institutional flows from previous day
+7. India VIX — local fear gauge (normal = 12-16)
+8. USD/INR — rupee strength/weakness
+9. Geopolitical events — Strait of Hormuz, elections, tariffs
+10. Overnight earnings — index heavyweights (Reliance, HDFC, ICICI, etc.)
+```
+
+### 6E. GAP FADE STRATEGY (High Probability Setup)
+
+```
+For gaps 30-60 pts (small):
+  - Do NOT enter at 9:15 AM open
+  - Wait for the FIRST 15-min candle (9:15-9:30) to close
+  - Gap Up + Red candle (closes below open) → SHORT → target = prev close
+  - Gap Down + Green candle (closes above open) → LONG → target = prev close
+  - SL = 20 pts beyond opening print if gap up, or 20 pts below if gap down
+  - Time stop: flatten by 11:30 AM (gap fill prob drops after 2hrs)
+
+For gaps 60-100 pts (moderate):
+  - Wait for first 5-min candle (9:15-9:20) to confirm
+  - Candle closes red on gap up → sell the fill
+  - Candle closes green on gap up → wait, may extend
+  - Target = 50% of gap size
+  - SL = 15 pts adverse move from opening price
+
+For gaps > 100 pts (large):
+  - Do NOT fade — gap extension more likely
+  - Trade in gap direction (buy gap up, sell gap down)
+  - Target = 70-100% of gap extension
+```
+
+### 6F. REAL-WORLD EXAMPLE (16 Jul 2026)
+
+```
+Date:        16 Jul 2026
+Prev Close:  24,073.45
+Open:        24,144.10
+Gap:         +70.65 pts (+0.29%) → CLASSIFICATION: SMALL (Flat)
+
+Why gap up?
+  - US CPI cooled to 3.5% (softer inflation)
+  - JPMorgan & Goldman Sachs record quarterly profits
+  - GIFT Nifty traded +0.3% overnight (24,104 at 10:30 PM)
+  - India VIX at 13.27 (normal, down 3.49%)
+  - PARTIAL OFFSET: Iran closed Strait of Hormuz, crude >$86
+  → Positive US cues outweighed geopolitics
+
+GIFT Nifty at 8:30 AM: 24,044 (flat) → expected flat open
+  BUT pre-open session (9:00-9:15) showed strong buying interest
+  → Actual open was higher than GIFT predicted (DII buying + short covering)
+
+Trading action:
+  - First 15-min candle: Green → gap extension, not fill
+  - Price hit 24,167 (high), then pulled back
+  - Result: gap partially filled (70→41pts filled by 10:00 AM)
 ```
 
 ## 7. CHART MARKING CONVENTIONS
@@ -345,7 +426,50 @@ Always check tick value from the panel before setting TP/SL.
 9. **Forgetting to verify**: Always check Reward/Risk in panel before clicking place
 10. **Re-calling chart_get_state**: Get entity IDs once, reuse them
 
-## 12. QUICK PANEL REFERENCE
+## 12. DAILY TRADING PLAN — TEMPLATE
+
+Run this every morning after session startup. Fill in the blanks.
+
+```
+📊 DAILY PLAN | <DATE> | <DAY OF WEEK>
+
+=== PRE-MARKET CHECKLIST (6:00-9:00 AM) ===
+☐ Gift Nifty @ <time> = <price> vs Prev Close <price> = ±<pts> gap
+☐ US Markets: S&P 500 <±%>, Nasdaq <±%>, US VIX <value>
+☐ Asia Open: Nikkei <±%>, Hang Seng <±%>, Kospi <±%>
+☐ Crude Oil: $<value>/bbl — <impact>
+☐ USD/INR: <value> — <strong/weak>
+☐ India VIX: <value> — <normal/elevated>
+☐ FII/DII: <net buy/sell> — <bearish/bullish signal>
+☐ Geopolitics: <key event>
+☐ Index Heavyweight Events: <earnings/news>
+
+=== GAP ANALYSIS ===
+Prev Close:    <price>
+Today Open:    <price>
+Gap:           ±<pts> (±<percent>%)
+Classification: <Noise/Small/Moderate/Large/Extreme>
+Bias:          <Bullish/Bearish/Neutral>
+
+=== KEY LEVELS ===
+PDH:   <price>  | PDL:   <price>
+VWAP:  <price>  | Prev Close: <price>
+R1:    <price>  | S1:    <price>
+R2:    <price>  | S2:    <price>
+Today High: <price> | Today Low: <price>
+
+=== TRADING PLAN ===
+Primary Bias:   <Bullish/Bearish/Neutral>
+Setup Type:     <Gap Fade/Gap Extend/Range Trade>
+Entry Zones:
+  LONG: <demand zone price range>
+  SHORT: <supply zone price range>
+TP: <price> (or TICKS: 400)
+SL: <price> (or TICKS: 400)
+Max Loss: ₹<amount> (₹10k capital limit)
+```
+
+## 13. QUICK PANEL REFERENCE
 
 ```
 Action                             | X       | Y       | Method
