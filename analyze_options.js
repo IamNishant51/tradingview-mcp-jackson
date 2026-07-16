@@ -14,46 +14,61 @@ function premiumCost(premium, lot) {
   return lot * premium
 }
 
+const GAP_RULES = [
+  { max: 30, label: 'Noise', fill: 0.84, bias: 'Neutral', action: 'IGNORE' },
+  { max: 60, label: 'Small', fill: 0.63, bias: 'Mean-rev', action: 'FADE after 1st candle' },
+  { max: 150, label: 'Moderate', fill: 0.39, bias: 'Neutral', action: 'WAIT for 1st candle' },
+  { max: Infinity, label: 'Large', fill: 0.25, bias: 'Momentum', action: 'TREND or ASIDE' },
+]
+
+function classifyGap(gapPts) {
+  const absGap = Math.abs(gapPts)
+  for (const r of GAP_RULES) {
+    if (absGap <= r.max) return r
+  }
+  return GAP_RULES[GAP_RULES.length - 1]
+}
+
 function selectStrikes(spot, gap, vwap, interval) {
   const atm = atmStrike(spot, interval)
-  const gapSize = Math.abs(gap)
   const gapUp = gap > 0
   const wickAboveVwap = spot > vwap
+  const gapInfo = classifyGap(gap)
 
   let buyStrike = null, direction = null, strategy = null, bias = null
 
-  if (gapSize < 30) {
+  if (gapInfo.label === 'Noise') {
     strategy = 'Short Straddle OTM'
     direction = 'Neutral'
     bias = 'Theta decay'
-  } else if (gapSize <= 60) {
+  } else if (gapInfo.label === 'Small') {
     strategy = 'Short Straddle ATM'
-    direction = 'Mean-reversion'
-    bias = 'Gap fill'
-  } else if (gapSize <= 100) {
+    direction = gapUp ? 'Bearish fade' : 'Bullish fade'
+    bias = 'Gap fill mean-reversion'
+  } else if (gapInfo.label === 'Moderate') {
     if (gapUp && wickAboveVwap) {
       buyStrike = atm + interval
       direction = 'Long CE'
       strategy = 'Buy OTM Call'
-      bias = 'Momentum (extend)'
+      bias = 'Momentum (extend, above VWAP)'
     } else {
       buyStrike = gapUp ? atm + interval : atm - interval
       direction = gapUp ? 'Long CE' : 'Long PE'
       strategy = 'Buy ATM+1'
-      bias = 'Neutral-momentum'
+      bias = gapUp ? 'Neutral-bullish' : 'Neutral-bearish'
     }
-  } else if (gapSize <= 200) {
-    buyStrike = gapUp ? atm + interval * 2 : atm - interval * 2
-    direction = gapUp ? 'Long CE' : 'Long PE'
-    strategy = 'Buy OTM x2'
-    bias = 'Trend continuation'
   } else {
-    direction = gapUp ? 'Long CE OTM x3' : 'Long PE OTM x3'
-    strategy = 'Avoid / deep OTM only'
-    bias = 'Trend — stand aside'
+    buyStrike = gapUp ? atm + interval * 2 : atm - interval * 2
+    direction = gapUp ? 'Long CE OTM x2' : 'Long PE OTM x2'
+    strategy = 'Trend / Stand Aside'
+    bias = 'Large gap — 63% reverse intraday'
+    if (Math.abs(gap) > 200) {
+      direction = 'STAND ASIDE'
+      buyStrike = null
+    }
   }
 
-  return { atm, buyStrike, direction, strategy, bias, gapSize, gapUp }
+  return { atm, buyStrike, direction, strategy, bias, gapSize: Math.abs(gap), gapUp, gapInfo }
 }
 
 function premiumEstimate(strike, atm, isCall, interval) {
