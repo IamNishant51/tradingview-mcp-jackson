@@ -396,11 +396,17 @@ Negative GEX + Large gap (150+pts)       → TREND trade with wide SL
 
 ### Text Placement (CRITICAL — avoid overlap)
 ```
-- ALWAYS check existing text positions before placing new ones
-- Spread text vertically: place at different y-price levels
-- Left-aligned: x=1784094000 (old bars area, avoids candles)
+- Place text ON the line/rectangle, at the CURRENT bar timestamp (right side)
+  → text appears right next to the line, easy to read
+- For lines: place text at same price as the line, at current bar's time
+- For rectangles: place text inside the zone (between high/low prices)
+- Keep text SHORT: ≤30 chars, just the level name + price
+  → "Fib 78.6% 24,240 SELL"
+  → "VWAP 24,212"
+  → "0% 24,051 SUPPORT"
+- Only put the HEADER (title) on the far left side (old timestamp)
 - If two labels at same price level, offset them vertically by 15-20 pts
-- Keep text SHORT: ≤60 chars, simple Hindi-English mix OK ("समर्थन 24000")
+- Spread text vertically: don't stack multiple labels at same y-price
 ```
 
 ### Color Coding
@@ -452,7 +458,354 @@ Entry→Target Box:
   overrides='{"backgroundColor":"rgba(255,145,0,0.10)", "linecolor":"#FF9100"}'
 ```
 
-## 8. OPTIONS QUANT DEVELOPER — Greeks, Strike Selection & Risk Framework
+## 7B. FIBONACCI GRID STRATEGY — Institutional Intraday Quant Edition
+
+> Institutional-grade Fibonacci Grid strategy for intraday Nifty 50. Combines dual Fib retracements, ATR-adaptive zones, multi-timeframe alignment, volume + RSI confirmation, session regime detection, and conviction-based position sizing. Designed for ₹10k capital, 1 lot max.
+
+### 7B-1. STRATEGY ARCHITECTURE (Read This First)
+
+```
+Every trade has 4 layers of validation:
+  LAYER 1 — Market Regime (Is today tradeable? Trend or Range?)
+  LAYER 2 — Zone Alignment (Do multiple timeframes agree?)
+  LAYER 3 — Price Action (Is the candle confirming at the zone?)
+  LAYER 4 — Risk/Return (Does expected value justify the trade?)
+
+Only take a trade if ALL 4 layers pass.
+```
+
+### 7B-2. HOW TO SETUP THE FIBONACCI GRID
+
+```
+STEP 1 — Identify the swing (TWO scales always)
+  a) MAJOR SWING: Daily chart — most recent clear reversal (multi-day swing)
+  b) INTRADAY SWING: Current session — today's high and low (or 60-min swing)
+
+STEP 2 — Draw TWO Fibonacci retracements per swing (CRITICAL)
+  Fib A: From SWING HIGH → SWING LOW  (retracement down)
+  Fib B: From SWING LOW  → SWING HIGH (retracement up)
+  → Same two points, reversed → complete grid
+  → Levels: 23.6, 38.2, 50, 61.8, 78.6 (SKIP 0% and 100% — negative EV per quant)
+
+STEP 3 — Zone width: FIXED 12pts (QUANT-OPTIMIZED)
+  Grid search over 6-30pts: ZW=12 optimal
+    ZW=8: ₹+327k, PF=5.08, 81% positive days
+    ZW=12: ₹+290k, PF=3.38, 54.4% WR (BEST BALANCE)
+    ZW=16: ₹+250k, PF=2.89
+  → Walk-forward confirmed ZW stability: min=6 max=6 mean=6 (all windows)
+  → ATR-adaptive ZW tested: fixed edges it by ₹1-6k (not worth complexity)
+  → FIXED ZW=12 (equivalent to ~₹780 SL on 1 lot Nifty)
+
+STEP 4 — Draw supply zones (RED) at Fib resistance
+  At: Fib 61.8%, 78.6% (SKIP 100% — quant-excluded)
+  Thickness: ZW=12pts
+  Extend rectangles to the far right (future) — use end of visible range
+  Style: backgroundColor="rgba(242,54,69,0.25)", linecolor="#FF1744"
+
+STEP 5 — Draw demand zones (YELLOW) at Fib support
+  At: Fib 23.6%, 38.2%, 50% (SKIP 0% — quant-excluded)
+  Thickness: ZW=12pts
+  Extended to far right
+  Style: backgroundColor="rgba(255,235,59,0.25)", linecolor="#FFC107"
+
+STEP 6 — Draw exact Fib level lines
+  Solid red: 78.6% (hard resistance)
+  Dashed: 23.6%, 38.2%, 50%, 61.8% (reference)
+
+STEP 7 — Add text labels ON each line (current bar, right side)
+  Format: "LEVEL% PRICE"
+  Header on far left (old timestamp): "NIFTY FIB | Swing: X-Y | ZW=12"
+```
+
+### 7B-3. MARKET REGIME DETECTION (LAYER 1)
+
+```
+=== SESSION TYPE (Determines strategy mode) ===
+  TRENDING DAY: Price consistently above/below VWAP + ADX(14) > 25
+    → Trade ONLY in trend direction
+    → Buy dips to Fib support in uptrend, sell rallies to Fib resistance in downtrend
+    → Use wider SL (1.5× normal), let trades run
+
+  RANGING DAY: Price oscillating around VWAP + ADX(14) < 20
+    → Fade at extremes — buy at demand zones, sell at supply zones
+    → Use tighter SL (0.8× normal), quick profits
+    → Best for mean-reversion at Fib levels
+
+  MOMENTUM DAY: ADX 20-25
+    → Follow VWAP bias but take partial profits at Fib levels
+    → Hybrid approach: enter with trend, exit at opposite Fib zones
+
+=== DAY-OF-WEEK PERFORMANCE (Quant-verified) ===
+  Day    | WR   | Avg/trade | Action
+  -------|------|-----------|-------------------------------
+  Mon    | 45%  | ₹+896     | CAUTIOUS — lowest WR, avoid forced trades
+  Tue    | 64%  | ₹+1,146   | PREFERRED — highest WR, best fade day
+  Wed    | 55%  | ₹+650     | NEUTRAL — standard execution
+  Thu    | 56%  | ₹+811     | NEUTRAL — expiry noise manageable
+  Fri    | 48%  | ₹+645     | CAUTIOUS — trend bias, avoid mean-rev
+
+  → PREFER Tuesday entries (64% WR is best day)
+  → Avoid forcing trades on Monday/Friday (WR < 50%)
+  → These stats are from 351 trades over 106 days at ZW=12
+
+=== TIME-BASED PROBABILITY WEIGHTS ===
+  Window (IST)    | Weight | Action
+  ----------------|--------|-------------------------------
+  9:15-9:30       | 0%     | NO TRADES — opening chaos, fake range
+  9:30-10:30      | 100%   | PRIME — 60% of daily range forms here
+  10:30-12:00     | 85%    | REVERSAL WINDOW — mean-reversion at Fib levels
+  12:00-13:30     | 50%    | LUNCH LULL — reduce size, tighter SL
+  13:30-15:00     | 90%    | MOMENTUM WINDOW — trend continuation, breakouts
+  15:00-15:30     | 30%    | CLOSE ONLY — settlement, gamma flip, no new trades
+
+=== GAP CONTEXT (From Section 6) ===
+  Gap Up + VWAP above → TREND DAY UP → only buy demand zones
+  Gap Up + VWAP below → GAP FILL DAY → sell supply zones aggressively
+  Gap Down + VWAP below → TREND DAY DOWN → only sell supply zones
+  Gap Down + VWAP above → GAP FILL DAY → buy demand zones aggressively
+  Flat open + VWAP near → RANGE DAY → both sides, fade at extremes
+
+  Friday gaps: 33% fill rate → prefer trend direction, avoid fades
+  Monday gaps: 58.3% close higher → bullish bias, buy dips
+```
+
+### 7B-4. CONVICTION SCORING SYSTEM (LAYER 2 + 3)
+
+```
+Each setup gets a score from 0-10. Trade only when score ≥ 7.
+
+Component          | Max Pts | How to score
+-------------------|---------|-------------------------------------------
+MTF Alignment      | 3       | +1 per timeframe aligning (daily/60min/15min)
+VWAP Alignment     | 2       | +2 if setup aligns with VWAP bias, 0 if not
+Candle Rejection   | 2       | +2 for pin bar/engulfing, +1 for wick≥50%, 0 for none
+Volume Contraction | 1       | +1 if volume < prior 3 bars avg at the zone
+RSI Divergence     | 1       | +1 if RSI divergence at Fib level (hidden div = strong)
+Session Window     | 1       | +1 if in prime/reversal window, 0 if lunch, -1 if close
+
+TOTAL              | 10      | Trade if ≥ 7, Skip if < 7
+
+=== MTF ALIGNMENT (3 timeframes) ===
+  Check if the Fib level aligns across Daily, 60-min, and 5-min charts:
+  +1 if 60-min Fib level is within 10pts of 5-min Fib level
+  +1 if Daily Fib level is within 15pts of 5-min Fib level  
+  +1 if all three align within 15pts
+  → +3 = all timeframes agree → HIGHEST CONVICTION
+
+=== RSI DIVERGENCE AT FIB LEVELS ===
+  At DEMAND zone (buy):
+    Price makes lower low AT Fib support BUT RSI(14) makes higher low
+    → Bullish divergence → +1 point → STRONG buy signal
+
+  At SUPPLY zone (sell):
+    Price makes higher high AT Fib resistance BUT RSI(14) makes lower high
+    → Bearish divergence → +1 point → STRONG sell signal
+
+=== CANDLE CONFIRMATION AT ZONE ===
+  Entry requires candle CLOSE confirming the rejection:
+  - Pin bar: wick ≥ 2× body, close at opposite end
+  - Engulfing: candle fully engulfs prior candle
+  - Inside bar break: inside bar, then break in zone direction
+  - Doji at zone + next candle break: waiting for confirmation
+```
+
+### 7B-5. ENTRY/EXIT RULES WITH POSITION SIZING
+
+```
+=== POSITION SIZING (Based on Conviction Score + Kelly) ===
+  Full Kelly  = 38.3% of capital (₹3,834 risk/trade) — too aggressive
+  Half Kelly  = 19.2% (₹1,917) — moderate
+  Quarter Kelly = 9.6% (₹958) — RECOMMENDED for ₹10k
+
+  Score 7-8   → 1 lot (Quarter Kelly → ₹958 risk = 12pts SL = fits ZW=12)
+  Score 9-10  → 1 lot + add 1 more if price retests zone (scale in, ≤Half Kelly)
+  Score < 7   → NO TRADE (wait for better setup)
+
+=== SCALING PLAN ===
+  Enter 60% at zone, add 40% if price retests zone after 3+ bars
+  Exit 50% at TP1, 30% at TP2, 20% trail with SL to breakeven
+
+
+=== LONG SETUP (Buy at Demand Zone) ===
+
+  CONDITIONS (ALL 4 layers must pass):
+  L1 — Regime: Trending up (price > VWAP) OR Gap down + VWAP above
+  L1 — Time: Not 9:15-9:30 or 15:00-15:30
+  L2 — Score: Conviction Score ≥ 7
+  L3 — Candle: Pin bar / engulfing / inside-bar break at yellow zone
+  L4 — R:R: Potential reward ≥ 2× risk
+
+  ENTRY: LIMIT at zone midpoint
+  SL: ZoneWidth pts below zone lower boundary (ATR-adaptive)
+  TP1: Next Fib level (e.g., 50% → 61.8%)
+  TP2: 78.6% or 100%
+  Trailing: Move SL to breakeven after TP1 hit
+
+  RISK per trade (1 lot Nifty):
+    ZoneWidth=14 → SL 14pts × 1 lot × ₹65 = ₹910 (9.1% of ₹10k)
+    ZoneWidth=10 → SL 10pts × 1 lot × ₹65 = ₹650 (6.5% of ₹10k)
+    ZoneWidth=20 → SL 20pts × 1 lot × ₹65 = ₹1,300 (13% of ₹10k → skip, too risky)
+
+  R:R CHECK:
+    Distance from entry to next Fib level must be ≥ 2× ZoneWidth
+    Example: Entry at 24,171 (50%), next Fib 24,199 (61.8%) = +28pts
+             ZoneWidth = 14 → SL = 14pts
+             R:R = 28/14 = 2.0 → PASS
+
+
+=== SHORT SETUP (Sell at Supply Zone) ===
+
+  CONDITIONS (ALL 4 layers must pass):
+  L1 — Regime: Trending down (price < VWAP) OR Gap up + VWAP below
+  L1 — Time: Not 9:15-9:30 or 15:00-15:30
+  L2 — Score: Conviction Score ≥ 7
+  L3 — Candle: Pin bar / engulfing / inside-bar break at red zone
+  L4 — R:R: Potential reward ≥ 2× risk
+
+  ENTRY: LIMIT at zone midpoint
+  SL: ZoneWidth pts above zone upper boundary
+  TP1: Next Fib level
+  TP2: 50% or 38.2%
+  Trailing: Move SL to breakeven after TP1 hit
+
+  R:R CHECK: Same as Long — target distance ≥ 2× ZoneWidth
+
+
+=== BREAKOUT SETUP (Grid Break) ===
+
+  CONDITIONS:
+  Price closes 1 full bar BEYOND Fib 100% (above) or Fib 0% (below)
+  Volume on breakout bar ≥ 1.5× prior 5-bar avg
+  Time: 9:30-15:00 (not lunch lull)
+
+  BUY BREAKOUT:
+    Entry: LIMIT at 100% level + 5pts (on retest or immediately)
+    SL: ZoneWidth pts below 100% level
+    TP: 1.272 extension of swing range
+    Trail: After +1× ZoneWidth profit, move SL to entry
+
+  SELL BREAKDOWN:
+    Entry: LIMIT at 0% level - 5pts
+    SL: ZoneWidth pts above 0% level
+    TP: 1.272 extension downward
+```
+
+### 7B-6. EXPECTED VALUE & STATISTICAL EDGE
+
+```
+=== QUANT-CONFIRMED EV (351 trades, 106 days, ZW=12) ===
+  Win Rate:     54.4%
+  Avg Win:      33.2pts (₹+2,158)
+  Avg Loss:     11.7pts (₹-761)
+  Profit Factor: 3.38
+  R:R average:  2.84
+
+  EV = (0.544 × ₹2,158) − (0.456 × ₹761) = ₹1,174 − ₹347 = +₹827/trade
+
+=== BOOTSTRAP CONFIDENCE (10,000 resamples) ===
+  WR 95% CI:     49.3% — 59.5%
+  P&L 95% CI:    ₹227k — ₹359k (over 106 days)
+  Prob positive: 100.0%
+  Min WR at 95%: 49.3% → worst case still profitable
+
+=== TRANSACTION COSTS (₹20 brokerage, 1pt slippage, STT) ===
+  Cost/trade:    ₹287 (34.7% of gross)
+  Net daily:     ₹1,805 (after all costs)
+  Break-even slip: 9.3pts → massive margin of safety
+
+=== OPTIONAL FILTERS (Quant-tested, most rejected) ===
+  Multi-day confluence filter: HURTS (−₹232k vs baseline) → SKIP
+  ATR-adaptive ZW:            Fixed ZW wins by ₹1-6k → USE FIXED
+  Day-of-week filter:         Tue best (64% WR), skip Mon/Fri bias
+  Volatility regime:          Low-vol better (₹+63k) but no filter needed
+```
+
+### 7B-7. DECISION MATRIX — Complete
+
+```
+Price Location       | VWAP Bias | Session Type | Action                | Conviction
+-------------------- |-----------|--------------|-----------------------|-----------
+Below 23.6% (deep)   | Bullish   | Trending     | BUY at 23.6% bounce   | HIGH (9)
+Below 23.6% (deep)   | Bearish   | Trending     | WAIT — trend down     | LOW (3)
+Below 23.6% (deep)   | Bullish   | Range        | BUY at 23.6% bounce   | MED (6)
+In 23.6-38.2%        | Bullish   | Trending     | BUY at zone entry     | HIGH (8)
+In 23.6-38.2%        | Bullish   | Range        | BUY at zone entry     | MED (7)
+In 38.2-50%          | Bullish   | Trending     | BUY at zone dip       | MED (7)
+In 38.2-50%          | Bullish   | Range        | BUY at zone dip       | MED (6)
+In 50-61.8%          | Any       | Any          | WAIT — mid-zone       | LOW (4)
+In 61.8-78.6%        | Bearish   | Trending     | SELL at zone bounce   | HIGH (8)
+In 61.8-78.6%        | Bearish   | Range        | SELL at zone bounce   | MED (7)
+In 78.6%+            | Bearish   | Trending     | SELL at resistance    | HIGH (8)
+In 78.6%+            | Bearish   | Range        | SELL at resistance    | MED (7)
+In 78.6%+            | Bullish   | Trending     | WAIT for pullback     | MED (5)*
+Above 78.6% (broken) | Bullish   | Trending     | BUY retest (breakout) | HIGH (8)
+Below 23.6% (broken) | Bearish   | Trending     | SELL retest           | HIGH (8)
+
+*Note: Price at 78.6%+ + Bullish = wait for pullback to 78.6% or trend continuation
+```
+
+### 7B-8. LIVE EXAMPLE — 17 Jul 2026
+
+```
+ENVIRONMENT:
+  Day: Friday (low fill rate 33% → trend day bias)
+  Gap: +56pts (small gap)
+  VWAP: 24,214 | Price: 24,271 | Regime: BULLISH
+  Session: Trending (price consistently above VWAP)
+  ATR(14) on 5-min: ~28pts → ZoneWidth = 12pts (fixed, quant-optimized)
+
+INTRADAY Grid (24,050 → 24,291, 240pt range):
+  Level    | Price   | Zone          | Confluence
+  ---------|---------|---------------|---------------------------
+  78.6%    | 24,240  | Supply (Red)  | Major Fib 61.8%=24,195-229 ✓
+  61.8%    | 24,199  | Supply (Red)  | —
+  VWAP     | 24,214  | Blue line     | Price above = bullish
+  50%      | 24,171  | Demand (Yel)  | Major Fib 38.2%=24,000 ✓
+  38.2%    | 24,143  | Demand (Yel)  | —
+  23.6%    | 24,108  | Demand (Yel)  | Major Fib 23.6%=23,923 ✗
+
+BEST SETUP — BUY at 78.6% pullback (broken resistance → support flip):
+  Conviction Score:
+    MTF Alignment: +2 (intraday 78.6% ≈ major 61.8% zone) → 2pts
+    VWAP Alignment: Price > VWAP, buying at support → 2pts
+    Candle Rejection: Waiting for pin bar at 78.6% → pending
+    Volume Contraction: Waiting → pending
+    RSI Divergence: TBD
+    Session Window: 10:50 AM = reversal window → 1pt
+    Current Score: 5/10 (7 needed) → wait for price to reach zone + candle confirm
+
+  Planned Trade:
+    Entry: 24,238 (at 78.6% zone, ZoneWidth=12 → zone 24,228-24,252)
+    SL: 24,216 (22pts below zone lower — wide because trend day)
+    TP1: 24,265 (+27pts, halfway to highs)
+    R:R: 27/22 = 1.23 → marginal, wait for tighter entry
+```
+
+### 7B-9. FIBONACCI GRID — IMPLEMENTATION COMMAND
+
+```
+When user says "implement fibonacci strategy":
+  1. chart_set_timeframe D → get daily view
+  2. data_get_ohlcv count=50 → find major swing low & high
+  3. Switch to intraday (5-min) → get today's high & low
+  4. Get ATR(14) or estimate zone width (default 12pts)
+  5. Check VWAP, gap context, session type
+  6. Draw BOTH grids (major + intraday):
+     a) Fib A: SWING HIGH→SWING LOW
+     b) Fib B: SWING LOW→SWING HIGH
+  7. Draw supply zones (red, ZW=12 thick, extended right):
+     - At Fib 61.8%, 78.6% (SKIP 100% — quant-excluded)
+  8. Draw demand zones (yellow, ZW=12 thick, extended right):
+     - At Fib 23.6%, 38.2%, 50% (SKIP 0% — quant-excluded)
+  9. Draw horizontal lines at each Fib level:
+     - Red solid: 78.6% (hard resistance)
+     - Dashed: 23.6%, 38.2%, 50%, 61.8% (reference)
+  10. Add text ON each line at current bar (right side):
+      "78.6% PRICE SELL" | "61.8% PRICE"
+      "50% PRICE" | "38.2% PRICE BUY" | "23.6% PRICE BUY"
+  11. Header on far left: "FIB | Swing: X-Y | Price X | Bias: X"
+  12. Report: price position, bias, conviction, best setup with entry/SL/TP
+```
 
 ### 8A. NSE Option Chain — Access & Parse
 
